@@ -2,9 +2,9 @@ from __future__ import print_function
 import colorsys
 import numpy as np
 from keras.models import Model
-from cityscapes_labels import trainId2label
-from ade20k_labels import ade20k_id2label
-from pascal_voc_labels import voc_id2label
+from dataset.cityscapes_labels import trainId2label
+from dataset.ade20k_labels import ade20k_id2label
+from dataset.pascal_voc_labels import voc_id2label
 
 
 def class_image_to_image(class_id_image, class_id_to_rgb_map):
@@ -30,6 +30,7 @@ def color_class_image(class_image, model_name):
     elif 'ade20k' in model_name:
         colored_image = class_image_to_image(class_image, ade20k_id2label)
     else:
+        print('--- unknown scene: {}'.format(model_name))
         colored_image = add_color(class_image)
     return colored_image
 

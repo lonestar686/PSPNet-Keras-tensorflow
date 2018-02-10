@@ -4,12 +4,18 @@ import os
 from os.path import splitext, join
 import argparse
 import numpy as np
-from scipy import misc, ndimage
+
+#from scipy import misc
+#from skimage import io        
+import imageio as io
+from skimage.transform import resize # for image processing
+
+from scipy import ndimage
 from keras import backend as K
 from keras.models import model_from_json, load_model
 import tensorflow as tf
 import layers_builder as layers
-from python_utils import utils
+from dataset import utils
 from python_utils.preprocessing import preprocess_img
 from keras.utils.generic_utils import CustomObjectScope
 
@@ -22,9 +28,11 @@ class PSPNet(object):
 
     def __init__(self, nb_classes, resnet_layers, input_shape, weights):
         self.input_shape = input_shape
-        json_path = join("weights", "keras", weights + ".json")
-        h5_path = join("weights", "keras", weights + ".h5")
+
         if 'pspnet' in weights:
+            # keras weights
+            json_path = join("weights", "keras", weights + ".json")
+            h5_path = join("weights", "keras", weights + ".h5")
             if os.path.isfile(json_path) and os.path.isfile(h5_path):
                 print("Keras model & weights found, loading...")
                 with CustomObjectScope({'Interp': layers.Interp}):
@@ -51,7 +59,8 @@ class PSPNet(object):
         h_ori, w_ori = img.shape[:2]
 
         # Preprocess
-        img = misc.imresize(img, self.input_shape)
+        img = resize(img, self.input_shape, preserve_range=True)
+        #img = misc.imresize(img, self.input_shape)
 
         img = img - DATA_MEAN
         img = img[:, :, ::-1]  # RGB => BGR
@@ -59,7 +68,10 @@ class PSPNet(object):
         print("Predicting...")
 
         probs = self.feed_forward(img)
+        
         h, w = probs.shape[:2]
+        print(' h ={}, w ={}\n'.format(h,w))
+              
         probs = ndimage.zoom(probs, (1. * h_ori / h, 1. * w_ori / w, 1.),
                              order=1, prefilter=False)
         print("Finished prediction...")
@@ -70,6 +82,11 @@ class PSPNet(object):
         assert data.shape == (self.input_shape[0], self.input_shape[1], 3)
         data = data[np.newaxis, :, :, :]
 
+        pred = self.model.predict(data)
+        
+        return pred[0]
+    
+        """
         # utils.debug(self.model, data)
         pred = self.model.predict(data)[0]
 
@@ -88,6 +105,7 @@ class PSPNet(object):
             prediction = ndimage.zoom(prediction, (1. * h_ori / h, 1. * w_ori / w, 1.),
                                       order=1, prefilter=False)
         return prediction
+        """
 
     def set_npy_weights(self, weights_path):
         npy_weights_path = join("weights", "npy", weights_path + ".npy")
@@ -170,8 +188,12 @@ if __name__ == "__main__":
     K.set_session(sess)
 
     with sess.as_default():
-        img = misc.imread(args.input_path, mode='RGB')
-        cimg = misc.imresize(img, (args.input_size, args.input_size))
+        #img = misc.imread(args.input_path, mode='RGB')
+        #cimg = misc.imresize(img, (args.input_size, args.input_size))
+        img  = io.imread(args.input_path)
+        # need this 'preserve_range', otherwise it will be 'float64'
+        cimg = resize(img, (args.input_size, args.input_size), preserve_range=True)
+ 
         print(args)
         if not args.weights:
             if "pspnet50" in args.model:
@@ -191,17 +213,29 @@ if __name__ == "__main__":
             pspnet = PSPNet50(nb_classes=2, input_shape=(
                 768, 480), weights=args.weights)
 
+        # the predicted result
         probs = pspnet.predict(cimg, args.flip)
+        
         print("Writing results...")
         # import ipdb; ipdb.set_trace()
-        cm = np.argmax(probs, axis=2)
+        cm = np.argmax(probs, axis=2)    # labels
         pm = np.max(probs, axis=2)
 
-        color_cm = utils.add_color(cm)
+
+        #color_cm = utils.add_color(cm)    # label --> rgb
+        
         # color cm is [0.0-1.0] img is [0-255]
-        alpha_blended = 0.5 * color_cm * 255 + 0.5 * img
+        #alpha_blended = 0.5 * color_cm * 255 + 0.5 * cimg
+
+        #
+        color_cm = utils.color_class_image(cm, args.model)
+        alpha_blended = 0.5 * color_cm + 0.5 * cimg
+
+        #
         filename, ext = splitext(args.output_path)
-        misc.imsave(filename + "_seg_read" + ext, cm)
-        misc.imsave(filename + "_seg" + ext, color_cm)
-        misc.imsave(filename + "_probs" + ext, pm)
-        misc.imsave(filename + "_seg_blended" + ext, alpha_blended)
+
+        # save the results
+        io.imsave(filename + "_seg_read" + ext, cm)
+        io.imsave(filename + "_seg" + ext, color_cm)
+        io.imsave(filename + "_probs" + ext, pm)
+        io.imsave(filename + "_seg_blended" + ext, alpha_blended)
