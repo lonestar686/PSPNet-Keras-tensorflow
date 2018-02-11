@@ -19,15 +19,14 @@ from dataset import utils
 from python_utils.preprocessing import preprocess_img
 from keras.utils.generic_utils import CustomObjectScope
 
-# These are the means for the ImageNet pretrained ResNet
-DATA_MEAN = np.array([[[123.68, 116.779, 103.939]]])  # RGB order
-
-
 class PSPNet(object):
     """Pyramid Scene Parsing Network by Hengshuang Zhao et al 2017"""
 
     def __init__(self, nb_classes, resnet_layers, input_shape, weights):
         self.input_shape = input_shape
+
+        # These are the means for the ImageNet pretrained ResNet
+        self.data_mean = np.array([[[123.68, 116.779, 103.939]]])  # RGB order
 
         if 'pspnet' in weights:
             # keras weights
@@ -49,27 +48,43 @@ class PSPNet(object):
             print('Load pre-trained weights')
             self.model = load_model(weights)
 
-    def predict(self, img, flip_evaluation=False):
+    def image_balance(self, img):
+        """ subtract mean value
+        Arguments:
+          img: image
+        Returns:
+          the balanced image
+        """
+        img = img - self.data_mean
+        img = img[:, :, ::-1]  # RGB => BGR
+        img = img.astype('float32')
+
+        return img
+
+    def predict(self, oimg, flip_evaluation=False):
         """
         Predict segementation for an image.
 
         Arguments:
-            img: must be rowsxcolsx3
+            oimg: The original input image. must be rowsxcolsx3
         """
-        h_ori, w_ori = img.shape[:2]
+        h_ori, w_ori = oimg.shape[:2]
 
-        # Preprocess
-        img = resize(img, self.input_shape, preserve_range=True)
         #img = misc.imresize(img, self.input_shape)
 
-        img = img - DATA_MEAN
-        img = img[:, :, ::-1]  # RGB => BGR
-        img = img.astype('float32')
+        # Preprocessing. 
+        # Note: this preserve_range has to be true, or else the type is 'float64'
+        img = resize(oimg, self.input_shape, preserve_range=True)
+
+        # balance image
+        img = self.image_balance(img)
+
         print("Predicting...")
 
         probs = self.feed_forward(img, flip_evaluation)
 
-        if img.shape[0:1] != self.input_shape:  # upscale prediction if necessary
+        # back to original image size
+        if oimg.shape != self.input_shape:  # upscale prediction if necessary
             h, w = probs.shape[:2]
             probs = ndimage.zoom(probs, (1. * h_ori / h, 1. * w_ori / w, 1.),
                                  order=1, prefilter=False)
@@ -83,13 +98,14 @@ class PSPNet(object):
 
         if flip_evaluation:
             print("Predict flipped")
-            input_with_flipped = np.array(
-                [data, np.flip(data, axis=1)])
+            input_with_flipped = np.array([data, np.flip(data, axis=1)])
+            # 
             prediction_with_flipped = self.model.predict(input_with_flipped)
-            prediction = (prediction_with_flipped[
-                          0] + np.fliplr(prediction_with_flipped[1])) / 2.0
+            prediction = (prediction_with_flipped[0] 
+                          + np.fliplr(prediction_with_flipped[1])) / 2.0
         else:
             prediction = self.model.predict(np.expand_dims(data, 0))[0]
+
         return prediction
 
     def set_npy_weights(self, weights_path):
@@ -173,15 +189,11 @@ if __name__ == "__main__":
     K.set_session(sess)
 
     with sess.as_default():
-        #img = misc.imread(args.input_path, mode='RGB')
-        #cimg = misc.imresize(img, (args.input_size, args.input_size))
-        img  = io.imread(args.input_path)
-        # need this 'preserve_range', otherwise it will be 'float64'
-        cimg = resize(img, (args.input_size, args.input_size), preserve_range=True)
- 
+
         print(args)
         if not args.weights:
             if "pspnet50" in args.model:
+                # ade20k
                 pspnet = PSPNet50(nb_classes=150, input_shape=(473, 473),
                                   weights=args.model)
             elif "pspnet101" in args.model:
@@ -195,24 +207,28 @@ if __name__ == "__main__":
             else:
                 print("Network architecture not implemented.")
         else:
-            pspnet = PSPNet50(nb_classes=2, input_shape=(
-                768, 480), weights=args.weights)
+            pspnet = PSPNet50(nb_classes=2, input_shape=(768, 480), 
+                                weights=args.weights)
 
+        # original image
+        #img = misc.imread(args.input_path, mode='RGB')
+        img  = io.imread(args.input_path)
+
+        # predicted 
         probs = pspnet.predict(img, args.flip)
 
+        # post processing
         print("Writing results...")
         cm = np.argmax(probs, axis=2)
         pm = np.max(probs, axis=2)
 
-
         #color_cm = utils.add_color(cm)    # label --> rgb
-        
         # color cm is [0.0-1.0] img is [0-255]
-        #alpha_blended = 0.5 * color_cm * 255 + 0.5 * cimg
+        #alpha_blended = 0.5 * color_cm * 255 + 0.5 * img
 
-        #
+        # blending original image with segmented image
         color_cm = utils.color_class_image(cm, args.model)
-        alpha_blended = 0.5 * color_cm + 0.5 * cimg
+        alpha_blended = 0.5 * color_cm + 0.5 * img
 
         #
         filename, ext = splitext(args.output_path)
