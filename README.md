@@ -6,6 +6,7 @@ Pyramid Scene Parsing Network (PSPNet) was proposed by Hengshuang Zhao, Jianping
 
 The architecture is described as follows:
 ![New](assets/pspnet.png)
+Figure 1. Overview of our proposed PSPNet. Given an input image (a), we first use CNN to get the feature map of the last convolutional layer (b), then a pyramid parsing module is applied to harvest different sub-region representations, followed by upsampling and concatenation layers to form the final feature representation, which carries both local and global context information in (c). Finally, the representation is fed into a convolution layer to get the final per-pixel prediction (d).
 
 This is an implementation of PSPNet in Keras.
 
