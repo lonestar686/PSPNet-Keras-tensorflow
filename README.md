@@ -46,6 +46,7 @@ python pspnet.py -m <model> -i <input_image>  -o <output_path>
 python pspnet.py -m pspnet101_cityscapes -i example_images/cityscapes.png -o test/cityscapes.jpg
 python pspnet.py -m pspnet101_voc2012 -i example_images/pascal_voc.jpg -o test/pascal_voc.jpg
 python pspnet.py -m pspnet50_ade20k -i example_images/ade20k.jpg -o test/ade20k.jpg
+python pspnet.py -m pspnet101_voc2012 -i example_images/pascal_voc_2007_000733.jpg -o test/pascal_voc_2007_000733.jpg
 ```
 List of arguments:
 ```bash
